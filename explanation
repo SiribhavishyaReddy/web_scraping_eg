@@ -1,0 +1,154 @@
+1. Importing Required Libraries
+
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+import numpy as np
+import time
+import random
+#pandas: Used for storing scraped data in a structured DataFrame.
+#requests: Fetches the HTML content of Amazon's webpage.
+#BeautifulSoup: Parses HTML content to extract useful data.
+#numpy: Helps in handling missing or empty data.
+#time & random: Used to add delays between requests to avoid being blocked.
+
+2. Setting Up the Target URL and Headers
+
+URL = "https://www.amazon.in/s?k=hair+curler&crid=3A0MRHL5JU1T3&sprefix=hair+curle%2Caps%2C230&ref=nb_sb_noss_2"
+HEADERS = ({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US, en;q=0.5'
+})
+#URL: The Amazon search page for "hair curler" products.
+#HEADERS: Mimics a real browser request to avoid bot detection.
+
+3. Fetching the Webpage
+
+try:
+    webpage = requests.get(URL, headers=HEADERS, timeout=10)
+    webpage.raise_for_status()  # Check for HTTP errors
+except requests.exceptions.RequestException as e:
+    print(f"Error fetching the page: {e}")
+    exit()
+#requests.get(): Fetches the HTML content of the Amazon search page.
+#raise_for_status(): Ensures the request was successful (status code 200).
+#Error Handling: If the request fails, the script exits gracefully.
+
+4. Parsing HTML with BeautifulSoup
+
+soup = BeautifulSoup(webpage.content, "html.parser")
+BeautifulSoup(): Parses the raw HTML into a structured format for easy data extraction.
+
+5. Extracting Product Links
+
+links = soup.find_all("a", attrs={"class": "a-link-normal s-no-outline"})
+if not links:
+    links = soup.find_all("a", attrs={"class": "a-link-normal s-line-clamp-3 s-link-style a-text-normal"})
+    
+#soup.find_all(): Searches for all product links on the page.
+#Two Selectors: Amazon may change HTML classes, so we check for two possible link structures.
+
+6. Defining Data Extraction Functions
+#These functions extract specific details from each product page.
+
+a) get_title() - Extracts Product Name
+
+def get_title(soup):
+    try:
+        title = soup.find("span", attrs={"id": "productTitle"})
+        return title.get_text(strip=True) if title else ""
+    except Exception as e:
+        print(f"Error getting title: {e}")
+        return ""
+        
+b) get_price() - Extracts Price
+
+def get_price(soup):
+    try:
+        price_span = soup.find("span", attrs={"class": "a-price-whole"})
+        if not price_span:
+            price_span = soup.find("span", attrs={"class": "a-offscreen"})
+        return price_span.get_text(strip=True) if price_span else ""
+    except Exception as e:
+        print(f"Error getting price: {e}")
+        return ""
+
+c) get_rating() - Extracts Star Rating
+
+def get_rating(soup):
+    try:
+        rating = soup.find("span", attrs={"class": "a-icon-alt"})
+        return rating.get_text(strip=True) if rating else ""
+    except Exception as e:
+        print(f"Error getting rating: {e}")
+        return ""
+
+d) get_review_count() - Extracts Number of Reviews
+
+def get_review_count(soup):
+    try:
+        reviews = soup.find("span", attrs={"id": "acrCustomerReviewText"})
+        return reviews.get_text(strip=True) if reviews else ""
+    except Exception as e:
+        print(f"Error getting reviews: {e}")
+        return ""
+
+e) get_availability() - Checks Stock Status
+
+def get_availability(soup):
+    try:
+        availability = soup.find("div", attrs={"id": "availability"})
+        if availability:
+            return availability.find("span").get_text(strip=True)
+        return ""
+    except Exception as e:
+        print(f"Error getting availability: {e}")
+        return ""
+
+7. Initializing Data Storage
+
+d = { "title": [],"price": [],"rating": [], "reviews": [],  "availability": [],"url": [] }
+#A dictionary to store scraped data before converting to a DataFrame.
+
+8. Looping Through Products & Scraping Data
+
+MAX_PRODUCTS = 10  # Limit to avoid too many requests
+products_scraped = 0
+
+for link_tag in links:
+    if products_scraped >= MAX_PRODUCTS:
+        break
+        
+    try:
+        product_url = "https://www.amazon.in" + link_tag.get('href')
+        time.sleep(random.uniform(1, 3))  # Random delay to avoid blocking
+        
+        new_webpage = requests.get(product_url, headers=HEADERS, timeout=10)
+        new_soup = BeautifulSoup(new_webpage.content, "html.parser")
+        
+        # Append data to dictionary
+        d['title'].append(get_title(new_soup))
+        d['price'].append(get_price(new_soup))
+        d['rating'].append(get_rating(new_soup))
+        d['reviews'].append(get_review_count(new_soup))
+        d['availability'].append(get_availability(new_soup))
+        d['url'].append(product_url)
+        
+        products_scraped += 1
+    except Exception as e:
+        print(f"Error processing product: {e}")
+        continue
+#MAX_PRODUCTS: Limits the number of products scraped (to avoid detection).
+#time.sleep(): Adds a random delay (1-3 seconds) between requests.
+#Error Handling: Skips products if scraping fails.
+
+9. Cleaning & Saving Data
+
+amazon_df = pd.DataFrame.from_dict(d)
+amazon_df['title'].replace('', np.nan, inplace=True)
+amazon_df = amazon_df.dropna(subset=['title'])
+amazon_df.to_csv("amazon_data.csv", header=True, index=False)
+pd.DataFrame.from_dict(): Converts the dictionary into a structured table.
+
+#.dropna(): Removes rows with missing titles.
+#.to_csv(): Saves the data to a CSV file.
